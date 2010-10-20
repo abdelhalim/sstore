@@ -183,3 +183,4 @@ sstore_ioctl(struct inode *inode, struct file *file,
 
 module_init(sstore_init);
 module_exit(sstore_cleanup);
+MODULE_LICENSE("Dual BSD/GPL");
