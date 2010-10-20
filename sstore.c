@@ -2,6 +2,13 @@
 #include <linux/cdev.h>
 #include <linux/module.h>
 #include <linux/device.h>
+#include <linux/moduleparam.h>
+
+
+static int num_blobs = 1;
+static int blob_size = 1;
+module_param(num_blobs, int, S_IRUGO);
+module_param(blob_size, int, S_IRUGO);
 
 
 #define NUM_MINOR_DEVICES          2
