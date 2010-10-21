@@ -129,6 +129,14 @@ sstore_cleanup(void)
 int
 sstore_open(struct inode *inode, struct file *file)
 {
+
+
+  // Only root is allowed
+  if (!capable(CAP_SYS_ADMIN))
+        return -EPERM;
+  
+  printk(KERN_DEBUG "opened sstore device\n"); 
+
   return 0;
 }
 
@@ -142,7 +150,9 @@ sstore_release(struct inode *inode, struct file *file)
 }
 
 /*
- * Read from a sstore
+ * Read from a sstore at given index
+ * If the read index is past end-of-store then block until
+ * a new record is written at its index.
  */
 ssize_t
 sstore_read(struct file *file, char *buf,
@@ -152,7 +162,7 @@ sstore_read(struct file *file, char *buf,
 }
 
 /*
- * Write to a sstore
+ * Write to a sstore at a given index
  */
 ssize_t
 sstore_write(struct file *file, const char *buf,
