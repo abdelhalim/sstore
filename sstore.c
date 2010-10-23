@@ -13,18 +13,21 @@ module_param(blob_size, int, S_IRUGO);
 
 #define NUM_MINOR_DEVICES          2
 
+static atomic_t sstore_closed = ATOMIC_INIT(1);
+
 
 struct blob {
   char *data;
-  int  index;
+  char  isValid;
 };
 
 /* Per-device structure */
 struct sstore_dev {
-  struct blob *data;
+  void **data;
   unsigned short current_pointer; /* Current pointer */
   unsigned int size;              /* Size */
   int store_number;               /* store number */
+  int nreaders, nwriters;	  /* number of readers/writers */
   char name[10];		  /* Name */
   struct cdev cdev;               /* The cdev structure */
   /* ... */                       /* Mutexes, spinlocks, wait
@@ -146,9 +149,21 @@ sstore_open(struct inode *inode, struct file *file)
   printk(KERN_DEBUG "SStore device opened\n"); 
 
   dev = container_of(inode->i_cdev, struct sstore_dev, cdev);
+  dev->data = NULL;
   file->private_data = dev; /* to be used by other methods */
 
-  // Do we need trim function
+  /* check if this is the first time to open the device*/
+  if (atomic_dec_and_test(&sstore_closed)) {
+ 	 
+    /* Allocate memory for an array of pointers to the blobs */
+    dev->data = kmalloc(num_blobs * sizeof(struct blob *), GFP_KERNEL);
+    if (!dev->data) {
+	printk(KERN_DEBUG "Couldn't allocate memory for the sstore blobs\n");
+	/* TODO should I return with error? */
+    }
+  } 
+
+  // Do we need to reset anything?
 
   return 0;
 }
@@ -159,6 +174,7 @@ sstore_open(struct inode *inode, struct file *file)
 int
 sstore_release(struct inode *inode, struct file *file)
 {
+  atomic_inc(&sstore_closed); /* release the device */
   return 0;
 }
 
