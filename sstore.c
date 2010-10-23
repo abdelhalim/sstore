@@ -7,7 +7,7 @@
 
 #define DEBUG
 
-static int num_blobs = 2;
+static int num_blobs = 5;
 static int max_size = 10;
 module_param(num_blobs, int, S_IRUGO);
 module_param(max_size, int, S_IRUGO);
@@ -20,13 +20,14 @@ static atomic_t sstore_closed = ATOMIC_INIT(1);
 
 struct blob {
   char *data;
-  char  isValid;
+  int  size;
+  char isValid;
 };
 
 struct data_buffer {
     int index;      /* index into the blob list */
     int size;       /* size of the data transfer */
-    char * data;    /* where the data being transfered resides */
+    char *data;     /* where the data being transfered resides */
 };
 
 
@@ -185,6 +186,9 @@ sstore_open(struct inode *inode, struct file *file)
 int
 sstore_release(struct inode *inode, struct file *file)
 {
+  printk(KERN_DEBUG "SStore device released\n"); 
+
+  /* TODO do we need to check for open count? */
   atomic_inc(&sstore_closed); /* release the device */
   return 0;
 }
@@ -195,12 +199,48 @@ sstore_release(struct inode *inode, struct file *file)
  * a new record is written at its index.
  */
 ssize_t
-sstore_read(struct file *file, char __user *buf,
+sstore_read(struct file *file, char __user *u_buf,
           size_t count, loff_t *ppos)
 {
   struct sstore_dev *dev = file->private_data;
+  struct data_buffer *k_buf; /* has the index, size, 
+			    and data to be written */
+  ssize_t bytes_read = 0; /* Hmm, what about count arg */
+  unsigned long error; /* copy_from_user, copy_to_user return value */
+  struct blob *blob;
   
   printk(KERN_DEBUG "SStore Read\n"); 
+
+  k_buf = kmalloc (sizeof (struct data_buffer), GFP_KERNEL);
+  if (!k_buf)
+    printk("Bad kmalloc\n");
+  
+  error = copy_from_user(k_buf, u_buf, sizeof (struct data_buffer));
+  if (error > 0)
+    printk("Copy from user\n");
+
+#ifdef DEBUG
+  printk("Index: %d\n", k_buf->index);
+  printk("Size : %d\n", k_buf->size);
+#endif
+  /* TODO check if index is valid */
+
+  /* TODO mutex */
+  blob = dev->data[k_buf->index];
+
+  if (blob->isValid) {
+
+#ifdef DEBUG
+  printk("User Data: %s\n", blob->data);
+#endif
+
+    error = copy_to_user(k_buf->data, blob->data, k_buf->size);
+    if (error > 0)
+      printk("Copy from user\n");
+  } else {
+    printk("Invalid Index\n");
+    /* TODO sleep & wait for data */
+  }
 
   return 0;
 }
@@ -218,6 +258,8 @@ sstore_write(struct file *file, const char __user *u_buf,
   ssize_t bytes_written = 0;
   unsigned long error; /* copy_from_user return value */
 
+  struct blob *blob;
+
   printk(KERN_DEBUG "SStore Write\n"); 
 
   k_buf = kmalloc (sizeof (struct data_buffer), GFP_KERNEL);
@@ -226,17 +268,45 @@ sstore_write(struct file *file, const char __user *u_buf,
   
   error = copy_from_user(k_buf, u_buf, sizeof (struct data_buffer));
   if (error > 0)
-    printk("Copy from user\n");
+    printk(KERN_DEBUG "Copy from user\n");
 
 #ifdef DEBUG
   printk("Index: %d\n", k_buf->index);
-  printk("User Data: %s\n", k_buf->data);
+  printk("Size : %d\n", k_buf->size);
 #endif
+
+  /* check if index value is valid */
+  /* check boundaries */
+  if (k_buf->index > num_blobs) {
+    printk(KERN_INFO "Attempt to write beyond the number of blobs"); 
+    return -EINVAL;
+  }
 
   if (k_buf->size > max_size) {
     printk(KERN_DEBUG "Data is larger than blob max size.\n");
+    /* TODO what should we do */
   } else {
-     bytes_written = k_buf->size;
+    blob = kmalloc(sizeof (struct blob), GFP_KERNEL);
+    if (blob) {
+      blob->data = kmalloc(k_buf->size, GFP_KERNEL);
+      printk(KERN_DEBUG "Finished allocating data\n");
+      copy_from_user(blob->data, k_buf->data, k_buf->size);
+      if (error > 0)
+        printk(KERN_DEBUG "Copy from user\n");
+
+      /* blob->data = k_buf->data; */
+      blob->isValid = 1;		/* valid data */
+
+      /* TODO mutex */
+      dev->data[k_buf->index] = blob;
+
+      bytes_written = k_buf->size;
+
+#ifdef DEBUG
+  printk("User Data: %s\n", blob->data);
+#endif
+
+    }
   }
 
   return bytes_written;
