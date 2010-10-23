@@ -3,12 +3,14 @@
 #include <linux/module.h>
 #include <linux/device.h>
 #include <linux/moduleparam.h>
+#include <linux/uaccess.h> /* copy_from_user & copy_to_user */
 
+#define DEBUG
 
-static int num_blobs = 1;
-static int blob_size = 1;
+static int num_blobs = 2;
+static int max_size = 10;
 module_param(num_blobs, int, S_IRUGO);
-module_param(blob_size, int, S_IRUGO);
+module_param(max_size, int, S_IRUGO);
 
 
 #define NUM_MINOR_DEVICES          2
@@ -20,6 +22,13 @@ struct blob {
   char *data;
   char  isValid;
 };
+
+struct data_buffer {
+    int index;      /* index into the blob list */
+    int size;       /* size of the data transfer */
+    char * data;    /* where the data being transfered resides */
+};
+
 
 /* Per-device structure */
 struct sstore_dev {
@@ -38,8 +47,8 @@ struct sstore_dev {
 
 int sstore_open(struct inode *inode, struct file *file);
 int sstore_release(struct inode *inode, struct file *file);
-ssize_t sstore_read(struct file *file, char *buf, size_t count, loff_t *ppos);
-ssize_t sstore_write(struct file *file, const char *buf,
+ssize_t sstore_read(struct file *file, char __user *buf, size_t count, loff_t *ppos);
+ssize_t sstore_write(struct file *file, const char __user *buf,
            size_t count, loff_t *ppos);
 static loff_t sstore_llseek(struct file *file, loff_t offset, int orig);
 static int sstore_ioctl(struct inode *inode, struct file *file,
@@ -142,9 +151,11 @@ sstore_open(struct inode *inode, struct file *file)
 
   struct sstore_dev *dev; /* device information */
 
+#ifndef DEBUG
   // Only root is allowed
   if (!capable(CAP_SYS_ADMIN))
         return -EPERM;
+#endif 
 
   printk(KERN_DEBUG "SStore device opened\n"); 
 
@@ -184,11 +195,13 @@ sstore_release(struct inode *inode, struct file *file)
  * a new record is written at its index.
  */
 ssize_t
-sstore_read(struct file *file, char *buf,
+sstore_read(struct file *file, char __user *buf,
           size_t count, loff_t *ppos)
 {
   struct sstore_dev *dev = file->private_data;
   
+  printk(KERN_DEBUG "SStore Read\n"); 
+
   return 0;
 }
 
@@ -196,12 +209,37 @@ sstore_read(struct file *file, char *buf,
  * Write to a sstore at a given index
  */
 ssize_t
-sstore_write(struct file *file, const char *buf,
+sstore_write(struct file *file, const char __user *u_buf,
            size_t count, loff_t *ppos)
 {
   struct sstore_dev *dev = file->private_data;
+  struct data_buffer *k_buf; /* has the index, size, 
+			    and data to be written */
+  ssize_t bytes_written = 0;
+  unsigned long error; /* copy_from_user return value */
 
-  return 0;
+  printk(KERN_DEBUG "SStore Write\n"); 
+
+  k_buf = kmalloc (sizeof (struct data_buffer), GFP_KERNEL);
+  if (!k_buf)
+    printk("Bad kmalloc\n");
+  
+  error = copy_from_user(k_buf, u_buf, sizeof (struct data_buffer));
+  if (error > 0)
+    printk("Copy from user\n");
+
+#ifdef DEBUG
+  printk("Index: %d\n", k_buf->index);
+  printk("User Data: %s\n", k_buf->data);
+#endif
+
+  if (k_buf->size > max_size) {
+    printk(KERN_DEBUG "Data is larger than blob max size.\n");
+  } else {
+     bytes_written = k_buf->size;
+  }
+
+  return bytes_written;
 }
 /*
  * Seek 
