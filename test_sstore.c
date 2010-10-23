@@ -31,7 +31,7 @@ int main() {
 	perror("opening sstore0");
 
   buf.index = 3;
-  buf.size = 4;
+  buf.size = 5;
   buf.data = (char *) malloc(5 * sizeof (char));
   if (!buf.data)
      printf("Error allocating memory\n");
@@ -41,6 +41,15 @@ int main() {
   written = write(sstore_dev, &buf, sizeof (struct data_buffer));
   if (written < 0)
     perror("write");
+
+  free(buf.data);
+  buf.data = NULL;
+
+  /* Now testing the read */
+  printf("Reading Data... \n");
+  buf.data = (char *) malloc(5 * sizeof (char));
+  read(sstore_dev, &buf, sizeof (struct data_buffer));
+  printf("Data: %s\n", buf.data);
 
   close(sstore_dev);
   
