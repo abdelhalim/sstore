@@ -13,13 +13,20 @@ module_param(blob_size, int, S_IRUGO);
 
 #define NUM_MINOR_DEVICES          2
 
-/* Per-device (per-bank) structure */
+
+struct blob {
+  char *data;
+  int  index;
+};
+
+/* Per-device structure */
 struct sstore_dev {
+  struct blob *data;
   unsigned short current_pointer; /* Current pointer */
   unsigned int size;              /* Size */
   int store_number;               /* store number */
+  char name[10];		  /* Name */
   struct cdev cdev;               /* The cdev structure */
-  char name[10];                  /* Name of I/O region */
   /* ... */                       /* Mutexes, spinlocks, wait
                                      queues, .. */
 } *sstore_devp[NUM_MINOR_DEVICES];
@@ -97,7 +104,7 @@ sstore_init(void)
                   "sstore%d", i);
   }
 
-  printk("Sstore Driver Initialized.\n");
+  printk("SStore Driver Initialized.\n");
   return 0;
 }
 
@@ -130,12 +137,18 @@ int
 sstore_open(struct inode *inode, struct file *file)
 {
 
+  struct sstore_dev *dev; /* device information */
 
   // Only root is allowed
   if (!capable(CAP_SYS_ADMIN))
         return -EPERM;
-  
-  printk(KERN_DEBUG "opened sstore device\n"); 
+
+  printk(KERN_DEBUG "SStore device opened\n"); 
+
+  dev = container_of(inode->i_cdev, struct sstore_dev, cdev);
+  file->private_data = dev; /* to be used by other methods */
+
+  // Do we need trim function
 
   return 0;
 }
@@ -158,6 +171,8 @@ ssize_t
 sstore_read(struct file *file, char *buf,
           size_t count, loff_t *ppos)
 {
+  struct sstore_dev *dev = file->private_data;
+  
   return 0;
 }
 
@@ -168,6 +183,8 @@ ssize_t
 sstore_write(struct file *file, const char *buf,
            size_t count, loff_t *ppos)
 {
+  struct sstore_dev *dev = file->private_data;
+
   return 0;
 }
 /*
