@@ -5,6 +5,8 @@
 #include <linux/moduleparam.h>
 #include <linux/uaccess.h> /* copy_from_user & copy_to_user */
 
+#include "sstore.h"
+
 #define DEBUG
 
 static int num_blobs = 5;
@@ -342,7 +344,22 @@ static int
 sstore_ioctl(struct inode *inode, struct file *file,
            unsigned int cmd, unsigned long arg)
 {
-  return 0;
+  int retval = 0;
+  
+  /* extract the type and make sure we have correct cmd */
+  if (_IOC_TYPE(cmd) != SSTORE_IOC_MAGIC) return -ENOTTY;
+  /* TODO any extra checks for the cmd? */
+
+  switch (cmd) {
+    case SSTORE_IOCREMOVE:
+      printk(KERN_DEBUG "sstore: Remove blob");
+      break;
+    default:
+      return -ENOTTY;
+
+  }
+
+  return retval;
 }
 
 
