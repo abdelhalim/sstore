@@ -4,6 +4,7 @@
 #include <linux/device.h>
 #include <linux/moduleparam.h>
 #include <linux/uaccess.h> /* copy_from_user & copy_to_user */
+#include <linux/proc_fs.h>
 
 #include "sstore.h"
 
@@ -19,6 +20,9 @@ module_param(max_size, int, S_IRUGO);
 
 static atomic_t sstore_closed = ATOMIC_INIT(1);
 
+/* /proc sstore directory, create in the init, 
+   and removed in the release */
+struct proc_dir_entry *sstore_proc;
 
 struct blob {
   char *data;
@@ -55,6 +59,12 @@ ssize_t sstore_write(struct file *file, const char __user *buf,
            size_t count, loff_t *ppos);
 static int sstore_ioctl(struct inode *inode, struct file *file,
            unsigned int cmd, unsigned long arg);
+
+/* operation prototype for the /proc fs */
+int sstore_read_procmem(char *buf, char **start, off_t offset,
+                       int count, int *eof, void *data);
+int sstore_read_procstats(char *buf, char **start, off_t offset,
+                       int count, int *eof, void *data);
 
 /* File operations structure. Defined in linux/fs.h */
 static struct file_operations sstore_fops = {
@@ -117,6 +127,13 @@ sstore_init(void)
                   "sstore%d", i);
   }
 
+  sstore_proc = proc_mkdir("sstore", NULL);
+  create_proc_read_entry("data", 0, sstore_proc, 
+                         sstore_read_procmem, NULL);
+  
+  create_proc_read_entry("stats", 0, sstore_proc, 
+                         sstore_read_procstats, NULL);
+
   printk("SStore Driver Initialized.\n");
   return 0;
 }
@@ -140,6 +157,13 @@ sstore_cleanup(void)
   }
   /* Destroy sstore_class */
   class_destroy(sstore_class);
+
+  
+  /* clean all /proc entries */
+  remove_proc_entry("data", sstore_proc);
+  remove_proc_entry("stats", sstore_proc);
+  remove_proc_entry("sstore", NULL);
+
   return;
 }
 
@@ -351,6 +375,23 @@ sstore_ioctl(struct inode *inode, struct file *file,
   return retval;
 }
 
+int sstore_read_procmem(char *buf, char **start, off_t offset,
+                       int count, int *eof, void *data)
+{
+  int len = 0;
+
+  *eof = 1;
+  return len;
+}
+
+int sstore_read_procstats(char *buf, char **start, off_t offset,
+                       int count, int *eof, void *data)
+{
+  int len = 0;
+
+  *eof = 1;
+  return len;
+}
 
 module_init(sstore_init);
 module_exit(sstore_cleanup);
