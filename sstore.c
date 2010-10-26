@@ -53,7 +53,6 @@ int sstore_release(struct inode *inode, struct file *file);
 ssize_t sstore_read(struct file *file, char __user *buf, size_t count, loff_t *ppos);
 ssize_t sstore_write(struct file *file, const char __user *buf,
            size_t count, loff_t *ppos);
-static loff_t sstore_llseek(struct file *file, loff_t offset, int orig);
 static int sstore_ioctl(struct inode *inode, struct file *file,
            unsigned int cmd, unsigned long arg);
 
@@ -64,7 +63,6 @@ static struct file_operations sstore_fops = {
   .release  =   sstore_release,     /* Release method */
   .read     =   sstore_read,        /* Read method */
   .write    =   sstore_write,       /* Write method */
-  .llseek   =   sstore_llseek,      /* Seek method */
   .ioctl    =   sstore_ioctl,       /* Ioctl method */
 };
 
@@ -326,15 +324,6 @@ sstore_write(struct file *file, const char __user *u_buf,
   }
 
   return bytes_written;
-}
-/*
- * Seek 
- */
-static loff_t
-sstore_llseek(struct file *file, loff_t offset,
-            int orig)
-{
-  return 0;
 }
 
 /*
