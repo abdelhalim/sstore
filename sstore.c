@@ -104,6 +104,8 @@ sstore_init(void)
     if (!sstore_devp[i]) {
       printk("Bad Kmalloc\n"); return -ENOMEM;
     }
+    /* sstore storage */
+    sstore_devp[i]->data = NULL;
 
     sprintf(sstore_devp[i]->name, "sstore%d", i);
 
@@ -192,7 +194,7 @@ sstore_open(struct inode *inode, struct file *file)
   if (atomic_dec_and_test(&sstore_closed)) {
  	 
     /* Allocate memory for an array of pointers to the blobs */
-    dev->data = kmalloc(num_blobs * sizeof(struct blob *), GFP_KERNEL);
+    dev->data = kzalloc(num_blobs * sizeof(struct blob *), GFP_KERNEL);
     if (!dev->data) {
 	printk(KERN_DEBUG "Couldn't allocate memory for the sstore blobs\n");
 	/* TODO should I return with error? */
@@ -379,6 +381,25 @@ int sstore_read_procmem(char *buf, char **start, off_t offset,
                        int count, int *eof, void *data)
 {
   int len = 0;
+  int i,j;
+  struct blob *blobp;
+
+  /* TODO should we set limit */
+  for (i = 0; i < NUM_MINOR_DEVICES ; i++) {
+    if (sstore_devp[i]->data) {
+      for (j = 0; j < num_blobs; j++) {
+        blobp = sstore_devp[i]->data[j]; 
+        if (blobp) {
+          len += sprintf(buf+len, "\nDevice %i: blob %i:", i, j);
+        } else {
+          len += sprintf(buf+len, "no data blob %i\n", j);
+	}
+      }
+    } else {
+      len += sprintf(buf+len, "no data device %i\n", i);
+    }
+    
+  }
 
   *eof = 1;
   return len;
