@@ -11,7 +11,7 @@
 #define DEBUG
 
 static int num_blobs = 5;
-static int max_size = 10;
+static int max_size = 64;
 module_param(num_blobs, int, S_IRUGO);
 module_param(max_size, int, S_IRUGO);
 
@@ -92,7 +92,7 @@ sstore_init(void)
   /* Request dynamic allocation of a device major number */
   if (alloc_chrdev_region(&sstore_dev_number, 0,
                           NUM_MINOR_DEVICES, DEVICE_NAME) < 0) {
-    printk(KERN_DEBUG "Can't register device\n"); return -1;
+    printk(KERN_DEBUG "sstore: Can't register device\n"); return -1;
   }
 
   /* Populate sysfs entries */
@@ -102,7 +102,7 @@ sstore_init(void)
     /* Allocate memory for the per-device structure */
     sstore_devp[i] = kmalloc(sizeof(struct sstore_dev), GFP_KERNEL);
     if (!sstore_devp[i]) {
-      printk("Bad Kmalloc\n"); return -ENOMEM;
+      printk("sstore: Bad Kmalloc\n"); return -ENOMEM;
     }
     /* sstore storage */
     sstore_devp[i]->data = NULL;
@@ -120,7 +120,7 @@ sstore_init(void)
     /* Connect the major/minor number to the cdev */
     ret = cdev_add(&sstore_devp[i]->cdev, (sstore_dev_number + i), 1);
     if (ret) {
-      printk("Bad cdev\n");
+      printk("sstore: Bad cdev\n");
       return ret;
     }
 
@@ -136,7 +136,7 @@ sstore_init(void)
   create_proc_read_entry("stats", 0, sstore_proc, 
                          sstore_read_procstats, NULL);
 
-  printk("SStore Driver Initialized.\n");
+  printk("sstore: SStore Driver Initialized.\n");
   return 0;
 }
 
@@ -184,7 +184,7 @@ sstore_open(struct inode *inode, struct file *file)
         return -EPERM;
 #endif 
 
-  printk(KERN_DEBUG "SStore device opened\n"); 
+  printk(KERN_DEBUG "sstore: SStore device opened\n"); 
 
   dev = container_of(inode->i_cdev, struct sstore_dev, cdev);
   dev->data = NULL;
@@ -196,7 +196,7 @@ sstore_open(struct inode *inode, struct file *file)
     /* Allocate memory for an array of pointers to the blobs */
     dev->data = kzalloc(num_blobs * sizeof(struct blob *), GFP_KERNEL);
     if (!dev->data) {
-	printk(KERN_DEBUG "Couldn't allocate memory for the sstore blobs\n");
+	printk(KERN_DEBUG "sstore: Couldn't allocate memory for the sstore blobs\n");
 	/* TODO should I return with error? */
     }
   } 
@@ -212,7 +212,7 @@ sstore_open(struct inode *inode, struct file *file)
 int
 sstore_release(struct inode *inode, struct file *file)
 {
-  printk(KERN_DEBUG "SStore device released\n"); 
+  printk(KERN_DEBUG "sstore: SStore device released\n"); 
 
   /* TODO do we need to check for open count? */
   atomic_inc(&sstore_closed); /* release the device */
@@ -234,30 +234,30 @@ sstore_read(struct file *file, char __user *u_buf,
   ssize_t bytes_read = 0; /* Hmm, what about count arg */
   struct blob *blob;
   
-  printk(KERN_DEBUG "SStore Read\n"); 
+  printk(KERN_DEBUG "sstore: SStore Read\n"); 
 
   k_buf = kmalloc (sizeof (struct data_buffer), GFP_KERNEL);
   if (!k_buf)
-    printk("Bad kmalloc\n");
+    printk("sstore: Bad kmalloc\n");
   
   if(copy_from_user(k_buf, u_buf, sizeof (struct data_buffer))) {
-    printk("Copy from user\n");
+    printk("sstore: Copy from user\n");
   }
 
 #ifdef DEBUG
-  printk("Index: %d\n", k_buf->index);
-  printk("Size : %d\n", k_buf->size);
+  printk("sstore: Index: %d\n", k_buf->index);
+  printk("sstore: Size : %d\n", k_buf->size);
 #endif
   /* check if index is valid */
   if(k_buf-> index < 0
     || k_buf->index > num_blobs) {
-    printk(KERN_INFO "Invalid \"index\" in the read request\n");
+    printk(KERN_INFO "sstore: Invalid \"index\" in the read request\n");
     return -EINVAL;
   }
 
   if(k_buf->size <= 0
     || k_buf->size > max_size) {
-    printk(KERN_DEBUG "Invalid \"size\" in the read request\n");
+    printk(KERN_DEBUG "sstore: Invalid \"size\" in the read request\n");
     return -EINVAL;
   }
 
@@ -267,15 +267,15 @@ sstore_read(struct file *file, char __user *u_buf,
   if (blob->isValid) {
 
 #ifdef DEBUG
-  printk("User Data: %s\n", blob->data);
+  printk("sstore: User Data: %s\n", blob->data);
 #endif
 
     if(copy_to_user(k_buf->data, blob->data, k_buf->size)) {
-      printk("Copy from user\n");
+      printk("sstore: Copy from user\n");
     }
 
   } else {
-    printk("Invalid Index\n");
+    printk("sstore: Invalid Index\n");
     /* TODO sleep & wait for data */
   }
 
@@ -296,31 +296,31 @@ sstore_write(struct file *file, const char __user *u_buf,
 
   struct blob *blob;
 
-  printk(KERN_DEBUG "SStore Write\n"); 
+  printk(KERN_DEBUG "sstore: Write\n"); 
 
   k_buf = kmalloc (sizeof (struct data_buffer), GFP_KERNEL);
   if (!k_buf)
-    printk("Bad kmalloc\n");
+    printk("sstore: Bad kmalloc\n");
   
   if(copy_from_user(k_buf, u_buf, sizeof (struct data_buffer))) {
-    printk(KERN_DEBUG "Problem copying from user space\n");
+    printk(KERN_DEBUG "sstore: Problem copying from user space\n");
   }
 
 #ifdef DEBUG
-  printk("Index: %d\n", k_buf->index);
-  printk("Size : %d\n", k_buf->size);
+  printk("sstore: Index: %d\n", k_buf->index);
+  printk("sstore: Size : %d\n", k_buf->size);
 #endif
 
   /* check if index value is valid */
   if (k_buf->index < 0 
       || k_buf->index > num_blobs) {
-    printk(KERN_INFO "Invalid \"index\" in the write request"); 
+    printk(KERN_INFO "sstore: Invalid \"index\" in the write request"); 
     return -EINVAL;
   }
 
   if (k_buf->size < 0 
      || k_buf->size > max_size) {
-    printk(KERN_DEBUG "Invalid \"size\" in the write request.\n");
+    printk(KERN_DEBUG "sstore: Invalid \"size\" in the write request.\n");
     return -EINVAL;
   } 
 
@@ -328,16 +328,17 @@ sstore_write(struct file *file, const char __user *u_buf,
   if (blob) {
     blob->data = kmalloc(k_buf->size, GFP_KERNEL);
     if (!blob->data) {
-      printk("Bad kmalloc\n");
+      printk("sstore: Bad kmalloc\n");
       return -ENOMEM;
     }
 
     if(copy_from_user(blob->data, k_buf->data, k_buf->size)) {
-      printk(KERN_DEBUG "Problem copying from user space\n");
+      printk(KERN_DEBUG "sstore: Problem copying from user space\n");
     }
 
     /* blob->data = k_buf->data; */
     blob->isValid = 1;		/* valid data */
+    blob->size = k_buf->size;
 
     /* TODO mutex */
     dev->data[k_buf->index] = blob;
@@ -345,7 +346,7 @@ sstore_write(struct file *file, const char __user *u_buf,
     bytes_written = k_buf->size;
 
 #ifdef DEBUG
-  printk("User Data: %s\n", blob->data);
+  printk("sstore: User Data: %s\n", blob->data);
 #endif
   }
 
@@ -381,18 +382,27 @@ int sstore_read_procmem(char *buf, char **start, off_t offset,
                        int count, int *eof, void *data)
 {
   int len = 0;
-  int i,j;
+  int i,j, k;
   struct blob *blobp;
+  unsigned short line_width = 16;
 
   /* TODO should we set limit */
   for (i = 0; i < NUM_MINOR_DEVICES ; i++) {
+    len += sprintf(buf+len, "\nDevice %i:", i);
     if (sstore_devp[i]->data) {
       for (j = 0; j < num_blobs; j++) {
         blobp = sstore_devp[i]->data[j]; 
         if (blobp) {
-          len += sprintf(buf+len, "\nDevice %i: blob %i:", i, j);
+          len += sprintf(buf+len, "\nblob %i size %i data:", j, blobp->size);
+	  for (k = 0; k < blobp->size; k++) {
+            if (k%line_width == 0) {
+              len += sprintf(buf+len, "\n");
+            }
+            len += sprintf(buf+len, "%x ", blobp->data[k]);
+          }
+          /* TODO print data */
         } else {
-          len += sprintf(buf+len, "no data blob %i\n", j);
+          len += sprintf(buf+len, "\nblob %i has no data\n", j);
 	}
       }
     } else {
