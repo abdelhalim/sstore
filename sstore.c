@@ -385,6 +385,9 @@ sstore_write(struct file *file, const char __user *u_buf,
 
   }
 
+  /* free the allocated kernel buffer */
+  kfree(k_buf);
+
   return bytes_written;
 }
 
@@ -412,6 +415,7 @@ sstore_ioctl(struct inode *inode, struct file *file,
       if (!retval) { /* success */
         blobp = dev->data[index];
         if (blobp) { /* valid blob */
+          kfree(blobp->data);
           kfree(blobp);
           printk(KERN_DEBUG "sstore: Freeing blob memory\n");
           dev->data[index] = NULL;
