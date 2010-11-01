@@ -46,7 +46,7 @@ struct sstore_dev {
   unsigned short current_pointer; /* Current pointer */
   unsigned int size;              /* Size */
   int store_number;               /* store number */
-  int nreaders, nwriters;	  /* number of readers/writers */
+  int nreads, nwrites;	          /* number of reads/writes */
   char name[10];		  /* Name */
   struct cdev cdev;               /* The cdev structure */
   struct semaphore sem;
@@ -114,7 +114,13 @@ sstore_init(void)
     /* Fill in the bank number to correlate this device
        with the corresponding sstore number */
     sstore_devp[i]->store_number = i;
+
+    /* initialize the mutex */
     init_MUTEX(&sstore_devp[i]->sem);
+
+    /* initialize number of read/write operations to 0 */
+    sstore_devp[i]->nreads = 0;
+    sstore_devp[i]->nwrites = 0;
 
     /* Connect the file operations with the cdev */
     cdev_init(&sstore_devp[i]->cdev, &sstore_fops);
@@ -270,6 +276,7 @@ sstore_read(struct file *file, char __user *u_buf,
 #ifdef DEBUG
   printk(KERN_DEBUG "sstore: mutex read\n");
 #endif
+
   if (down_interruptible(&dev->sem)) {
     return -ERESTARTSYS;
   }
@@ -300,6 +307,8 @@ sstore_read(struct file *file, char __user *u_buf,
     up(&dev->sem);
     return -EFAULT;
   }
+  /* Increment number of read operations */
+  dev->nreads++;
 
   up(&dev->sem);
 
@@ -377,6 +386,8 @@ sstore_write(struct file *file, const char __user *u_buf,
 #ifdef DEBUG
   printk("sstore: User Data: %s\n", blob->data);
 #endif
+    /* Increment number of write operations */
+    dev->nwrites++;
 
     up(&dev->sem);
     wake_up_interruptible(&wq);
@@ -436,6 +447,11 @@ int sstore_read_procmem(char *buf, char **start, off_t offset,
   /* TODO should we set limit */
   for (i = 0; i < NUM_MINOR_DEVICES ; i++) {
     len += sprintf(buf+len, "\nDevice %i:", i);
+
+    if (down_interruptible(&sstore_devp[i]->sem)) {
+      return -ERESTARTSYS;
+    }
+
     if (sstore_devp[i]->data) {
       for (j = 0; j < num_blobs; j++) {
         blobp = sstore_devp[i]->data[j]; 
@@ -447,7 +463,6 @@ int sstore_read_procmem(char *buf, char **start, off_t offset,
             }
             len += sprintf(buf+len, "%x ", blobp->data[k]);
           }
-          /* TODO print data */
         } else {
           len += sprintf(buf+len, "\nblob %i has no data\n", j);
 	}
@@ -456,6 +471,7 @@ int sstore_read_procmem(char *buf, char **start, off_t offset,
       len += sprintf(buf+len, "no data device %i\n", i);
     }
     
+    up(&sstore_devp[i]->sem);
   }
 
   *eof = 1;
@@ -466,6 +482,19 @@ int sstore_read_procstats(char *buf, char **start, off_t offset,
                        int count, int *eof, void *data)
 {
   int len = 0;
+  int i;
+
+  for (i = 0; i < NUM_MINOR_DEVICES ; i++) {
+    len += sprintf(buf+len, "Device %i: ", i);
+
+    if (down_interruptible(&sstore_devp[i]->sem)) {
+      return -ERESTARTSYS;
+    }
+    len += sprintf(buf+len, "reads: %i\t", sstore_devp[i]->nreads);
+    len += sprintf(buf+len, "writes: %i\n", sstore_devp[i]->nwrites);
+
+    up(&sstore_devp[i]->sem);
+  }
 
   *eof = 1;
   return len;
