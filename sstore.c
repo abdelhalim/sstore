@@ -7,6 +7,9 @@
 #include <linux/proc_fs.h>
 #include <linux/wait.h>
 #include <linux/sched.h> /* current and everthing */
+#include <linux/timer.h> /* timer */
+#include <linux/kthread.h> /* kthread stuff */
+
 
 #include "sstore.h"
 
@@ -17,11 +20,19 @@ static int max_size = 64;
 module_param(num_blobs, int, S_IRUGO);
 module_param(max_size, int, S_IRUGO);
 
+/* statisics are cleared ever clear_time seconds */
+static int clear_time = 30; 
+
+struct timer_list clear_timer;
+static struct task_struct *clear_thread_ptr;
+static wait_queue_head_t clear_thread_wait;
+static char timer_off;
 
 #define NUM_MINOR_DEVICES          2
 
 static atomic_t sstore_closed = ATOMIC_INIT(1);
 static DECLARE_WAIT_QUEUE_HEAD(wq);
+
 
 
 /* /proc sstore directory, create in the init, 
@@ -67,6 +78,9 @@ int sstore_read_procmem(char *buf, char **start, off_t offset,
                        int count, int *eof, void *data);
 int sstore_read_procstats(char *buf, char **start, off_t offset,
                        int count, int *eof, void *data);
+
+static void sstore_clear_statistics(unsigned long params); 
+static int clear_thread(void *dummy);
 
 /* File operations structure. Defined in linux/fs.h */
 static struct file_operations sstore_fops = {
@@ -138,6 +152,22 @@ sstore_init(void)
                   "sstore%d", i);
   }
 
+
+  /* */
+  init_waitqueue_head(&clear_thread_wait);
+  clear_thread_ptr = kthread_run(clear_thread, NULL, "clear_thread");
+  if(IS_ERR(clear_thread_ptr)) {
+    printk(KERN_DEBUG "sstore: error creating thread\n");
+  }
+
+  /* initialize the timer responsible for clearing statistic */
+  init_timer(&clear_timer); 
+  clear_timer.expires = jiffies + clear_time*HZ; 
+  clear_timer.function = sstore_clear_statistics;
+  clear_timer.data = 0;
+  add_timer(&clear_timer);
+  
+
   sstore_proc = proc_mkdir("sstore", NULL);
   create_proc_read_entry("data", 0, sstore_proc, 
                          sstore_read_procmem, NULL);
@@ -146,6 +176,44 @@ sstore_init(void)
                          sstore_read_procstats, NULL);
 
   printk("sstore: SStore Driver Initialized.\n");
+  return 0;
+}
+
+
+/*
+ * clear statistics
+ */
+static void sstore_clear_statistics(unsigned long params) 
+{
+  printk(KERN_ALERT "sstore: clearing sstore statistics\n");
+  wake_up_interruptible(&clear_thread_wait);
+  timer_off = 1;
+
+  mod_timer(&clear_timer, jiffies + clear_time*HZ); 
+}
+
+static int
+clear_thread(void *dummy) 
+{
+  int rc;
+  int i;
+
+  while (1) {
+    rc = wait_event_interruptible(clear_thread_wait,
+             timer_off || kthread_should_stop());
+
+    if (kthread_should_stop() || rc == -ERESTARTSYS) {
+      break;
+    }
+    
+    for (i=0; i<NUM_MINOR_DEVICES; i++) {
+      mutex_lock(&sstore_devp[i]->sstore_mutex);
+      sstore_devp[i]->nreads  = 0;
+      sstore_devp[i]->nwrites = 0;
+      mutex_unlock(&sstore_devp[i]->sstore_mutex);
+    }
+    timer_off = 0;
+  }
   return 0;
 }
 
@@ -168,6 +236,9 @@ sstore_cleanup(void)
   }
   /* Destroy sstore_class */
   class_destroy(sstore_class);
+
+  kthread_stop(clear_thread_ptr);
+  del_timer_sync(&clear_timer);
 
   
   /* clean all /proc entries */
