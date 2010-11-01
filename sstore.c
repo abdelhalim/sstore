@@ -5,6 +5,8 @@
 #include <linux/moduleparam.h>
 #include <linux/uaccess.h> /* copy_from_user & copy_to_user */
 #include <linux/proc_fs.h>
+#include <linux/wait.h>
+#include <linux/sched.h> /* current and everthing */
 
 #include "sstore.h"
 
@@ -19,6 +21,8 @@ module_param(max_size, int, S_IRUGO);
 #define NUM_MINOR_DEVICES          2
 
 static atomic_t sstore_closed = ATOMIC_INIT(1);
+static DECLARE_WAIT_QUEUE_HEAD(wq);
+
 
 /* /proc sstore directory, create in the init, 
    and removed in the release */
@@ -27,7 +31,6 @@ struct proc_dir_entry *sstore_proc;
 struct blob {
   char *data;
   int  size;
-  char isValid;
 };
 
 struct data_buffer {
@@ -46,8 +49,7 @@ struct sstore_dev {
   int nreaders, nwriters;	  /* number of readers/writers */
   char name[10];		  /* Name */
   struct cdev cdev;               /* The cdev structure */
-  /* ... */                       /* Mutexes, spinlocks, wait
-                                     queues, .. */
+  struct semaphore sem;
 } *sstore_devp[NUM_MINOR_DEVICES];
 
 
@@ -112,6 +114,7 @@ sstore_init(void)
     /* Fill in the bank number to correlate this device
        with the corresponding sstore number */
     sstore_devp[i]->store_number = i;
+    init_MUTEX(&sstore_devp[i]->sem);
 
     /* Connect the file operations with the cdev */
     cdev_init(&sstore_devp[i]->cdev, &sstore_fops);
@@ -187,18 +190,22 @@ sstore_open(struct inode *inode, struct file *file)
   printk(KERN_DEBUG "sstore: SStore device opened\n"); 
 
   dev = container_of(inode->i_cdev, struct sstore_dev, cdev);
-  dev->data = NULL;
   file->private_data = dev; /* to be used by other methods */
 
   /* check if this is the first time to open the device*/
   if (atomic_dec_and_test(&sstore_closed)) {
  	 
+    if (down_interruptible(&dev->sem)) {
+      return -ERESTARTSYS;
+    }
+
     /* Allocate memory for an array of pointers to the blobs */
     dev->data = kzalloc(num_blobs * sizeof(struct blob *), GFP_KERNEL);
     if (!dev->data) {
 	printk(KERN_DEBUG "sstore: Couldn't allocate memory for the sstore blobs\n");
 	/* TODO should I return with error? */
     }
+    up(&dev->sem);
   } 
 
   // Do we need to reset anything?
@@ -260,24 +267,43 @@ sstore_read(struct file *file, char __user *u_buf,
     printk(KERN_DEBUG "sstore: Invalid \"size\" in the read request\n");
     return -EINVAL;
   }
-
-  /* TODO mutex */
+#ifdef DEBUG
+  printk(KERN_DEBUG "sstore: mutex read\n");
+#endif
+  if (down_interruptible(&dev->sem)) {
+    return -ERESTARTSYS;
+  }
   blob = dev->data[k_buf->index];
 
-  if (blob->isValid) {
+  if (!blob) {
+    printk("sstore: Invalid Index, sleeping ...\n");
+    /* TODO sleep & wait for data */
+    up(&dev->sem);
+    wait_event_interruptible(wq, dev->data[k_buf->index]);
+    if (down_interruptible(&dev->sem)) {
+      return -ERESTARTSYS;
+    }
+    blob = dev->data[k_buf->index];
+  } 
+  if (signal_pending(current)) {
+    printk(KERN_ALERT "pid %u got signal.\n", (unsigned) current->pid);
+    up(&dev->sem);
+    return -EINTR;
+  }
 
 #ifdef DEBUG
   printk("sstore: User Data: %s\n", blob->data);
 #endif
 
-    if(copy_to_user(k_buf->data, blob->data, k_buf->size)) {
-      printk("sstore: Copy from user\n");
-    }
-
-  } else {
-    printk("sstore: Invalid Index\n");
-    /* TODO sleep & wait for data */
+  if(copy_to_user(k_buf->data, blob->data, k_buf->size)) {
+    printk("sstore: Copy from user\n");
+    up(&dev->sem);
+    return -EFAULT;
   }
+
+  up(&dev->sem);
+
+  kfree(k_buf);
 
   return 0;
 }
@@ -335,19 +361,26 @@ sstore_write(struct file *file, const char __user *u_buf,
     if(copy_from_user(blob->data, k_buf->data, k_buf->size)) {
       printk(KERN_DEBUG "sstore: Problem copying from user space\n");
     }
+    printk(KERN_DEBUG "sstore: Finished copying from user space\n");
 
-    /* blob->data = k_buf->data; */
-    blob->isValid = 1;		/* valid data */
     blob->size = k_buf->size;
 
     /* TODO mutex */
+    printk(KERN_DEBUG "sstore: Write mutex\n");
+    if (down_interruptible(&dev->sem)) {
+      return -ERESTARTSYS;
+    }
     dev->data[k_buf->index] = blob;
-
     bytes_written = k_buf->size;
+    printk(KERN_DEBUG "sstore: added reference\n");
 
 #ifdef DEBUG
   printk("sstore: User Data: %s\n", blob->data);
 #endif
+
+    up(&dev->sem);
+    wake_up_interruptible(&wq);
+
   }
 
   return bytes_written;
