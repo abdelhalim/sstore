@@ -49,7 +49,7 @@ struct sstore_dev {
   int nreads, nwrites;	          /* number of reads/writes */
   char name[10];		  /* Name */
   struct cdev cdev;               /* The cdev structure */
-  struct semaphore sem;
+  struct mutex sstore_mutex;
 } *sstore_devp[NUM_MINOR_DEVICES];
 
 
@@ -116,7 +116,7 @@ sstore_init(void)
     sstore_devp[i]->store_number = i;
 
     /* initialize the mutex */
-    init_MUTEX(&sstore_devp[i]->sem);
+    mutex_init(&sstore_devp[i]->sstore_mutex);
 
     /* initialize number of read/write operations to 0 */
     sstore_devp[i]->nreads = 0;
@@ -201,9 +201,7 @@ sstore_open(struct inode *inode, struct file *file)
   /* check if this is the first time to open the device*/
   if (atomic_dec_and_test(&sstore_closed)) {
  	 
-    if (down_interruptible(&dev->sem)) {
-      return -ERESTARTSYS;
-    }
+    mutex_lock(&dev->sstore_mutex);
 
     /* Allocate memory for an array of pointers to the blobs */
     dev->data = kzalloc(num_blobs * sizeof(struct blob *), GFP_KERNEL);
@@ -211,7 +209,7 @@ sstore_open(struct inode *inode, struct file *file)
 	printk(KERN_DEBUG "sstore: Couldn't allocate memory for the sstore blobs\n");
 	/* TODO should I return with error? */
     }
-    up(&dev->sem);
+    mutex_unlock(&dev->sstore_mutex);
   } 
 
   // Do we need to reset anything?
@@ -277,24 +275,20 @@ sstore_read(struct file *file, char __user *u_buf,
   printk(KERN_DEBUG "sstore: mutex read\n");
 #endif
 
-  if (down_interruptible(&dev->sem)) {
-    return -ERESTARTSYS;
-  }
+  mutex_lock(&dev->sstore_mutex);
   blob = dev->data[k_buf->index];
 
   if (!blob) {
     printk("sstore: Invalid Index, sleeping ...\n");
-    /* TODO sleep & wait for data */
-    up(&dev->sem);
+    /* sleep & wait for data */
+    mutex_unlock(&dev->sstore_mutex);
     wait_event_interruptible(wq, dev->data[k_buf->index]);
-    if (down_interruptible(&dev->sem)) {
-      return -ERESTARTSYS;
-    }
+    mutex_lock(&dev->sstore_mutex);
     blob = dev->data[k_buf->index];
   } 
   if (signal_pending(current)) {
     printk(KERN_ALERT "pid %u got signal.\n", (unsigned) current->pid);
-    up(&dev->sem);
+    mutex_unlock(&dev->sstore_mutex);
     return -EINTR;
   }
 
@@ -304,13 +298,13 @@ sstore_read(struct file *file, char __user *u_buf,
 
   if(copy_to_user(k_buf->data, blob->data, k_buf->size)) {
     printk("sstore: Copy from user\n");
-    up(&dev->sem);
+    mutex_unlock(&dev->sstore_mutex);
     return -EFAULT;
   }
   /* Increment number of read operations */
   dev->nreads++;
 
-  up(&dev->sem);
+  mutex_unlock(&dev->sstore_mutex);
 
   kfree(k_buf);
 
@@ -374,14 +368,11 @@ sstore_write(struct file *file, const char __user *u_buf,
 
     blob->size = k_buf->size;
 
-    /* TODO mutex */
+    /* mutex */
     printk(KERN_DEBUG "sstore: Write mutex\n");
-    if (down_interruptible(&dev->sem)) {
-      return -ERESTARTSYS;
-    }
+    mutex_lock(&dev->sstore_mutex);
     dev->data[k_buf->index] = blob;
     bytes_written = k_buf->size;
-    printk(KERN_DEBUG "sstore: added reference\n");
 
 #ifdef DEBUG
   printk("sstore: User Data: %s\n", blob->data);
@@ -389,7 +380,7 @@ sstore_write(struct file *file, const char __user *u_buf,
     /* Increment number of write operations */
     dev->nwrites++;
 
-    up(&dev->sem);
+    mutex_unlock(&dev->sstore_mutex);
     wake_up_interruptible(&wq);
 
   }
@@ -448,10 +439,7 @@ int sstore_read_procmem(char *buf, char **start, off_t offset,
   for (i = 0; i < NUM_MINOR_DEVICES ; i++) {
     len += sprintf(buf+len, "\nDevice %i:", i);
 
-    if (down_interruptible(&sstore_devp[i]->sem)) {
-      return -ERESTARTSYS;
-    }
-
+    mutex_lock(&sstore_devp[i]->sstore_mutex);
     if (sstore_devp[i]->data) {
       for (j = 0; j < num_blobs; j++) {
         blobp = sstore_devp[i]->data[j]; 
@@ -471,7 +459,7 @@ int sstore_read_procmem(char *buf, char **start, off_t offset,
       len += sprintf(buf+len, "no data device %i\n", i);
     }
     
-    up(&sstore_devp[i]->sem);
+    mutex_unlock(&sstore_devp[i]->sstore_mutex);
   }
 
   *eof = 1;
@@ -487,13 +475,11 @@ int sstore_read_procstats(char *buf, char **start, off_t offset,
   for (i = 0; i < NUM_MINOR_DEVICES ; i++) {
     len += sprintf(buf+len, "Device %i: ", i);
 
-    if (down_interruptible(&sstore_devp[i]->sem)) {
-      return -ERESTARTSYS;
-    }
+    mutex_lock(&sstore_devp[i]->sstore_mutex);
     len += sprintf(buf+len, "reads: %i\t", sstore_devp[i]->nreads);
     len += sprintf(buf+len, "writes: %i\n", sstore_devp[i]->nwrites);
 
-    up(&sstore_devp[i]->sem);
+    mutex_unlock(&sstore_devp[i]->sstore_mutex);
   }
 
   *eof = 1;
