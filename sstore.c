@@ -361,14 +361,28 @@ sstore_ioctl(struct inode *inode, struct file *file,
            unsigned int cmd, unsigned long arg)
 {
   int retval = 0;
+  unsigned int index;
+  struct sstore_dev *dev = file->private_data;
+  struct blob* blobp;
   
   /* extract the type and make sure we have correct cmd */
   if (_IOC_TYPE(cmd) != SSTORE_IOC_MAGIC) return -ENOTTY;
   /* TODO any extra checks for the cmd? */
 
+
   switch (cmd) {
     case SSTORE_IOCREMOVE:
-      printk(KERN_DEBUG "sstore: Remove blob");
+      printk(KERN_DEBUG "sstore: Remove blob\n");
+      retval = get_user(index, (unsigned int __user *) arg);
+      if (!retval) { /* success */
+        blobp = dev->data[index];
+        if (blobp) { /* valid blob */
+          kfree(blobp);
+          printk(KERN_DEBUG "sstore: Freeing blob memory\n");
+          dev->data[index] = NULL;
+        }
+      }
+      
       break;
     default:
       return -ENOTTY;
