@@ -345,6 +345,7 @@ sstore_read(struct file *file, char __user *u_buf,
     return -EINVAL;
   }
 
+  /* check if the requested size makes sense */
   if(k_buf->size <= 0
     || k_buf->size > max_size) {
     printk(KERN_DEBUG "sstore: Invalid \"size\" in the read request\n");
@@ -375,6 +376,16 @@ sstore_read(struct file *file, char __user *u_buf,
   printk("sstore: User Data: %s\n", blob->data);
 #endif
 
+
+  /* make sure the requested size is not larger 
+   * than the existing data, if this is the case, then set
+   * the requested size to the blob size */
+  if (k_buf->size > blob->size) {
+    printk(KERN_ALERT "sstore: requested read size is larger than the existing\n");
+    k_buf->size = blob->size;
+    bytes_read = blob->size;
+  } 
+
   if(copy_to_user(k_buf->data, blob->data, k_buf->size)) {
     printk("sstore: Copy from user\n");
     mutex_unlock(&dev->sstore_mutex);
@@ -387,7 +398,7 @@ sstore_read(struct file *file, char __user *u_buf,
 
   kfree(k_buf);
 
-  return 0;
+  return bytes_read;
 }
 
 /*
