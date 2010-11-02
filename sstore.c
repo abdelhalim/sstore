@@ -511,6 +511,9 @@ sstore_ioctl(struct inode *inode, struct file *file,
           kfree(blobp);
           printk(KERN_DEBUG "sstore: Freeing blob memory\n");
           dev->data[index] = NULL;
+        } else { /* blob @ index is not valid */
+          printk(KERN_INFO "sstore: Request to remove invalid entry\n");
+          return -ENOTTY;
         }
       }
       
