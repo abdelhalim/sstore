@@ -1,0 +1,28 @@
+Structured Store device driver (sstore)
+Abdelhalim Ragab (abdelhalim@r8t.org)
+Portland State Univeristy 
+Computer Science Department CS572
+November 2010
+
+
+Table of Contents
+=================
+1. Introduction
+2. Design
+3. Building 
+4. Running
+5. Testing
+
+----------------------------------
+
+1. Introduction
+
+2. Design:
+
+- ioctl operation
+
+3. Building:
+
+4. Running:
+
+5. Testing:
