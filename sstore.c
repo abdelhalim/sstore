@@ -347,7 +347,8 @@ sstore_read(struct file *file, char __user *u_buf,
 
   /* check if the requested size makes sense */
   if(k_buf->size <= 0
-    || k_buf->size > max_size) {
+    || k_buf->size > max_size
+    || k_buf->size != count) {
     printk(KERN_DEBUG "sstore: Invalid \"size\" in the read request\n");
     return -EINVAL;
   }
@@ -359,7 +360,7 @@ sstore_read(struct file *file, char __user *u_buf,
   blob = dev->data[k_buf->index];
 
   if (!blob) {
-    printk("sstore: Invalid Index, sleeping ...\n");
+    printk(KERN_INFO "sstore: Invalid Index, sleeping ...\n");
     /* sleep & wait for data */
     mutex_unlock(&dev->sstore_mutex);
     wait_event_interruptible(wq, dev->data[k_buf->index]);
@@ -438,7 +439,8 @@ sstore_write(struct file *file, const char __user *u_buf,
   }
 
   if (k_buf->size < 0 
-     || k_buf->size > max_size) {
+     || k_buf->size > max_size
+     || k_buf->size != count) {
     printk(KERN_DEBUG "sstore: Invalid \"size\" in the write request.\n");
     return -EINVAL;
   } 
@@ -529,7 +531,7 @@ int sstore_read_procmem(char *buf, char **start, off_t offset,
   struct blob *blobp;
   unsigned short line_width = 16;
 
-  /* TODO should we set limit */
+  /* TODO should we set limit to the printed output?*/
   for (i = 0; i < NUM_MINOR_DEVICES ; i++) {
     len += sprintf(buf+len, "\nDevice %i:", i);
 
@@ -583,3 +585,4 @@ int sstore_read_procstats(char *buf, char **start, off_t offset,
 module_init(sstore_init);
 module_exit(sstore_cleanup);
 MODULE_LICENSE("Dual BSD/GPL");
+MODULE_AUTHOR("Abdelhalim Ragab (abdelhalim @ r8t.org)");
