@@ -13,11 +13,6 @@
 
 #include "sstore.h"
 
-struct data_buffer {
-  int index;
-  int size;
-  char *data;
-};
 
 int sstore_dev = -1;
 
