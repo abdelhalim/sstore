@@ -286,7 +286,7 @@ sstore_open(struct inode *inode, struct file *file)
     dev->data = kzalloc(num_blobs * sizeof(struct blob *), GFP_KERNEL);
     if (!dev->data) {
 	printk(KERN_DEBUG "sstore: Couldn't allocate memory for the sstore blobs\n");
-	/* TODO should I return with error? */
+       return -ENOMEM;
     }
     mutex_unlock(&dev->sstore_mutex);
   } 
@@ -327,11 +327,15 @@ sstore_read(struct file *file, char __user *u_buf,
   printk(KERN_DEBUG "sstore: SStore Read\n"); 
 
   k_buf = kmalloc (sizeof (struct data_buffer), GFP_KERNEL);
-  if (!k_buf)
+  if (!k_buf) {
     printk("sstore: Bad kmalloc\n");
+    return -ENOMEM;
+  }
   
   if(copy_from_user(k_buf, u_buf, sizeof (struct data_buffer))) {
     printk("sstore: Copy from user\n");
+    kfree(k_buf);
+    return -ENOTTY;
   }
 
 #ifdef DEBUG
@@ -342,14 +346,15 @@ sstore_read(struct file *file, char __user *u_buf,
   if(k_buf-> index < 0
     || k_buf->index > num_blobs) {
     printk(KERN_INFO "sstore: Invalid \"index\" in the read request\n");
+    kfree(k_buf);
     return -EINVAL;
   }
 
   /* check if the requested size makes sense */
   if(k_buf->size <= 0
-    || k_buf->size > max_size
-    || k_buf->size != count) {
+    || k_buf->size > max_size) {
     printk(KERN_DEBUG "sstore: Invalid \"size\" in the read request\n");
+    kfree(k_buf);
     return -EINVAL;
   }
 #ifdef DEBUG
@@ -370,6 +375,7 @@ sstore_read(struct file *file, char __user *u_buf,
   if (signal_pending(current)) {
     printk(KERN_ALERT "pid %u got signal.\n", (unsigned) current->pid);
     mutex_unlock(&dev->sstore_mutex);
+    kfree(k_buf);
     return -EINTR;
   }
 
@@ -390,6 +396,7 @@ sstore_read(struct file *file, char __user *u_buf,
   if(copy_to_user(k_buf->data, blob->data, k_buf->size)) {
     printk("sstore: Copy from user\n");
     mutex_unlock(&dev->sstore_mutex);
+    kfree(k_buf);
     return -EFAULT;
   }
   /* Increment number of read operations */
@@ -419,11 +426,15 @@ sstore_write(struct file *file, const char __user *u_buf,
   printk(KERN_DEBUG "sstore: Write\n"); 
 
   k_buf = kmalloc (sizeof (struct data_buffer), GFP_KERNEL);
-  if (!k_buf)
+  if (!k_buf) {
     printk("sstore: Bad kmalloc\n");
+    return -ENOMEM;
+  }
   
   if(copy_from_user(k_buf, u_buf, sizeof (struct data_buffer))) {
     printk(KERN_DEBUG "sstore: Problem copying from user space\n");
+    kfree(k_buf);
+    return -ENOTTY;
   }
 
 #ifdef DEBUG
@@ -435,13 +446,14 @@ sstore_write(struct file *file, const char __user *u_buf,
   if (k_buf->index < 0 
       || k_buf->index > num_blobs) {
     printk(KERN_INFO "sstore: Invalid \"index\" in the write request"); 
+    kfree(k_buf);
     return -EINVAL;
   }
 
   if (k_buf->size < 0 
-     || k_buf->size > max_size
-     || k_buf->size != count) {
+     || k_buf->size > max_size) {
     printk(KERN_DEBUG "sstore: Invalid \"size\" in the write request.\n");
+    kfree(k_buf);
     return -EINVAL;
   } 
 
@@ -450,11 +462,15 @@ sstore_write(struct file *file, const char __user *u_buf,
     blob->data = kmalloc(k_buf->size, GFP_KERNEL);
     if (!blob->data) {
       printk("sstore: Bad kmalloc\n");
+      kfree(k_buf);
       return -ENOMEM;
     }
 
     if(copy_from_user(blob->data, k_buf->data, k_buf->size)) {
       printk(KERN_DEBUG "sstore: Problem copying from user space\n");
+      kfree(k_buf);
+      kfree(blob);
+      return -ENOTTY;
     }
     printk(KERN_DEBUG "sstore: Finished copying from user space\n");
 
