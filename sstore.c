@@ -28,10 +28,10 @@
 
 #define DEBUG
 
-static int num_blobs = 5;
-static int max_size = 64;
-module_param(num_blobs, int, S_IRUGO);
-module_param(max_size, int, S_IRUGO);
+static int max_num_blobs = 5;
+static int max_blob_size = 64;
+module_param(max_num_blobs, int, S_IRUGO);
+module_param(max_blob_size, int, S_IRUGO);
 
 /* statisics are cleared ever clear_time seconds */
 static int clear_time = 30; 
@@ -41,7 +41,6 @@ static struct task_struct *clear_thread_ptr;
 static wait_queue_head_t clear_thread_wait;
 static char timer_off;
 
-#define NUM_MINOR_DEVICES          2
 
 static atomic_t sstore_closed = ATOMIC_INIT(1);
 static DECLARE_WAIT_QUEUE_HEAD(wq);
@@ -266,11 +265,9 @@ sstore_open(struct inode *inode, struct file *file)
 
   struct sstore_dev *dev; /* device information */
 
-#ifndef DEBUG
   // Only root is allowed
   if (!capable(CAP_SYS_ADMIN))
         return -EPERM;
-#endif 
 
   printk(KERN_DEBUG "sstore: SStore device opened\n"); 
 
@@ -283,7 +280,7 @@ sstore_open(struct inode *inode, struct file *file)
     mutex_lock(&dev->sstore_mutex);
 
     /* Allocate memory for an array of pointers to the blobs */
-    dev->data = kzalloc(num_blobs * sizeof(struct blob *), GFP_KERNEL);
+    dev->data = kzalloc(max_num_blobs * sizeof(struct blob *), GFP_KERNEL);
     if (!dev->data) {
 	printk(KERN_DEBUG "sstore: Couldn't allocate memory for the sstore blobs\n");
        return -ENOMEM;
@@ -344,7 +341,7 @@ sstore_read(struct file *file, char __user *u_buf,
 #endif
   /* check if index is valid */
   if(k_buf-> index < 0
-    || k_buf->index > num_blobs) {
+    || k_buf->index > max_num_blobs) {
     printk(KERN_INFO "sstore: Invalid \"index\" in the read request\n");
     kfree(k_buf);
     return -EINVAL;
@@ -352,7 +349,7 @@ sstore_read(struct file *file, char __user *u_buf,
 
   /* check if the requested size makes sense */
   if(k_buf->size <= 0
-    || k_buf->size > max_size) {
+    || k_buf->size > max_blob_size) {
     printk(KERN_DEBUG "sstore: Invalid \"size\" in the read request\n");
     kfree(k_buf);
     return -EINVAL;
@@ -444,14 +441,14 @@ sstore_write(struct file *file, const char __user *u_buf,
 
   /* check if index value is valid */
   if (k_buf->index < 0 
-      || k_buf->index > num_blobs) {
+      || k_buf->index > max_num_blobs) {
     printk(KERN_INFO "sstore: Invalid \"index\" in the write request"); 
     kfree(k_buf);
     return -EINVAL;
   }
 
   if (k_buf->size < 0 
-     || k_buf->size > max_size) {
+     || k_buf->size > max_blob_size) {
     printk(KERN_DEBUG "sstore: Invalid \"size\" in the write request.\n");
     kfree(k_buf);
     return -EINVAL;
@@ -521,6 +518,10 @@ sstore_ioctl(struct inode *inode, struct file *file,
       printk(KERN_DEBUG "sstore: Remove blob\n");
       retval = get_user(index, (unsigned int __user *) arg);
       if (!retval) { /* success */
+        /* make sure the index is within the boundaris */
+        if (index < 0 || index > max_num_blobs)
+          return -EINVAL;
+
         blobp = dev->data[index];
         if (blobp) { /* valid blob */
           kfree(blobp->data);
@@ -556,7 +557,7 @@ int sstore_read_procmem(char *buf, char **start, off_t offset,
 
     mutex_lock(&sstore_devp[i]->sstore_mutex);
     if (sstore_devp[i]->data) {
-      for (j = 0; j < num_blobs; j++) {
+      for (j = 0; j < max_num_blobs; j++) {
         blobp = sstore_devp[i]->data[j]; 
         if (blobp) {
           len += sprintf(buf+len, "\nblob %i size %i data:", j, blobp->size);
