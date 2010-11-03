@@ -33,17 +33,14 @@ static int max_blob_size = 64;
 module_param(max_num_blobs, int, S_IRUGO);
 module_param(max_blob_size, int, S_IRUGO);
 
-/* statisics are cleared ever clear_time seconds */
-static int clear_time = 30; 
+/* statisics are cleared ever 'clear_time' seconds */
+static int clear_time = 60; 
 
 struct timer_list clear_timer;
 static struct task_struct *clear_thread_ptr;
 static wait_queue_head_t clear_thread_wait;
 static char timer_off;
 
-
-static atomic_t sstore_closed = ATOMIC_INIT(1);
-static DECLARE_WAIT_QUEUE_HEAD(wq);
 
 
 
@@ -68,6 +65,8 @@ struct sstore_dev {
   char name[10];		  /* Name */
   struct cdev cdev;               /* The cdev structure */
   struct mutex sstore_mutex;
+  wait_queue_head_t wq;
+  atomic_t refcount;
 } *sstore_devp[NUM_MINOR_DEVICES];
 
 
@@ -125,8 +124,13 @@ sstore_init(void)
     /* Allocate memory for the per-device structure */
     sstore_devp[i] = kmalloc(sizeof(struct sstore_dev), GFP_KERNEL);
     if (!sstore_devp[i]) {
-      printk("sstore: Bad Kmalloc\n"); return -ENOMEM;
+      printk("sstore: Bad Kmalloc\n"); 
+      return -ENOMEM;
     }
+
+    /* ref count */
+    atomic_set(&sstore_devp[i]->refcount, 1);
+
     /* sstore storage */
     sstore_devp[i]->data = NULL;
 
@@ -138,6 +142,9 @@ sstore_init(void)
 
     /* initialize the mutex */
     mutex_init(&sstore_devp[i]->sstore_mutex);
+
+    /* initialize wait queues */
+    init_waitqueue_head(&sstore_devp[i]->wq);
 
     /* initialize number of read/write operations to 0 */
     sstore_devp[i]->nreads = 0;
@@ -199,11 +206,22 @@ static void sstore_clear_statistics(unsigned long params)
   mod_timer(&clear_timer, jiffies + clear_time*HZ); 
 }
 
+/* clear sstore statistics */
+
+void clear_statistics() {
+  int i;
+  for (i=0; i<NUM_MINOR_DEVICES; i++) {
+    mutex_lock(&sstore_devp[i]->sstore_mutex);
+    sstore_devp[i]->nreads  = 0;
+    sstore_devp[i]->nwrites = 0;
+    mutex_unlock(&sstore_devp[i]->sstore_mutex);
+  }
+}
+
 static int
 clear_thread(void *dummy) 
 {
   int rc;
-  int i;
 
   while (1) {
     rc = wait_event_interruptible(clear_thread_wait,
@@ -213,12 +231,7 @@ clear_thread(void *dummy)
       break;
     }
     
-    for (i=0; i<NUM_MINOR_DEVICES; i++) {
-      mutex_lock(&sstore_devp[i]->sstore_mutex);
-      sstore_devp[i]->nreads  = 0;
-      sstore_devp[i]->nwrites = 0;
-      mutex_unlock(&sstore_devp[i]->sstore_mutex);
-    }
+    clear_statistics();
     timer_off = 0;
   }
   return 0;
@@ -275,7 +288,8 @@ sstore_open(struct inode *inode, struct file *file)
   file->private_data = dev; /* to be used by other methods */
 
   /* check if this is the first time to open the device*/
-  if (atomic_dec_and_test(&sstore_closed)) {
+  if (atomic_dec_and_test(&dev->refcount)) {
+    printk(KERN_DEBUG "sstore: first device open, init memory ...\n"); 
  	 
     mutex_lock(&dev->sstore_mutex);
 
@@ -299,10 +313,12 @@ sstore_open(struct inode *inode, struct file *file)
 int
 sstore_release(struct inode *inode, struct file *file)
 {
+  struct sstore_dev *dev = file->private_data;
+
   printk(KERN_DEBUG "sstore: SStore device released\n"); 
 
   /* TODO do we need to check for open count? */
-  atomic_inc(&sstore_closed); /* release the device */
+  atomic_inc(&dev->refcount); /* release the device */
   return 0;
 }
 
@@ -321,7 +337,7 @@ sstore_read(struct file *file, char __user *u_buf,
   ssize_t bytes_read = 0; /* Hmm, what about count arg */
   struct blob *blob;
   
-  printk(KERN_DEBUG "sstore: SStore Read\n"); 
+  printk(KERN_DEBUG "sstore: read\t"); 
 
   k_buf = kmalloc (sizeof (struct data_buffer), GFP_KERNEL);
   if (!k_buf) {
@@ -336,9 +352,10 @@ sstore_read(struct file *file, char __user *u_buf,
   }
 
 #ifdef DEBUG
-  printk("sstore: Index: %d\n", k_buf->index);
-  printk("sstore: Size : %d\n", k_buf->size);
+  printk("index: %d\t", k_buf->index);
+  printk("size : %d\n", k_buf->size);
 #endif
+
   /* check if index is valid */
   if(k_buf-> index < 0
     || k_buf->index > max_num_blobs) {
@@ -365,12 +382,12 @@ sstore_read(struct file *file, char __user *u_buf,
     printk(KERN_INFO "sstore: Invalid Index, sleeping ...\n");
     /* sleep & wait for data */
     mutex_unlock(&dev->sstore_mutex);
-    wait_event_interruptible(wq, dev->data[k_buf->index]);
+    wait_event_interruptible(dev->wq, dev->data[k_buf->index]);
     mutex_lock(&dev->sstore_mutex);
     blob = dev->data[k_buf->index];
   } 
   if (signal_pending(current)) {
-    printk(KERN_ALERT "pid %u got signal.\n", (unsigned) current->pid);
+    printk(KERN_ALERT "sstore: pid %u got signal.\n", (unsigned) current->pid);
     mutex_unlock(&dev->sstore_mutex);
     kfree(k_buf);
     return -EINTR;
@@ -420,7 +437,7 @@ sstore_write(struct file *file, const char __user *u_buf,
 
   struct blob *blob;
 
-  printk(KERN_DEBUG "sstore: Write\n"); 
+  printk(KERN_DEBUG "sstore: Write\t"); 
 
   k_buf = kmalloc (sizeof (struct data_buffer), GFP_KERNEL);
   if (!k_buf) {
@@ -435,8 +452,8 @@ sstore_write(struct file *file, const char __user *u_buf,
   }
 
 #ifdef DEBUG
-  printk("sstore: Index: %d\n", k_buf->index);
-  printk("sstore: Size : %d\n", k_buf->size);
+  printk("index: %d\t", k_buf->index);
+  printk("size : %d\n", k_buf->size);
 #endif
 
   /* check if index value is valid */
@@ -473,8 +490,9 @@ sstore_write(struct file *file, const char __user *u_buf,
 
     blob->size = k_buf->size;
 
-    /* mutex */
-    printk(KERN_DEBUG "sstore: Write mutex\n");
+#ifdef DEBUG
+  printk(KERN_DEBUG "sstore: Write mutex\n");
+#endif
     mutex_lock(&dev->sstore_mutex);
     dev->data[k_buf->index] = blob;
     bytes_written = k_buf->size;
@@ -486,7 +504,7 @@ sstore_write(struct file *file, const char __user *u_buf,
     dev->nwrites++;
 
     mutex_unlock(&dev->sstore_mutex);
-    wake_up_interruptible(&wq);
+    wake_up_interruptible(&dev->wq);
 
   }
 
