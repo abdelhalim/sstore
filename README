@@ -80,6 +80,7 @@ versions but it has not been tested
   creates a kthread that sleeps on a waiting_queue waiting queue. The timer 
   handler wakes up the kthread and the thread clears the statistics and 
   prints the kernel log message.
+  The statistics timeout 'clear_time' can be changed to module parameter easily
 
 3. Building:
 
@@ -110,5 +111,10 @@ versions but it has not been tested
   prog2: attempt to write to invalid index (<0)
   prog2: attempt to write to invalid index (> max_num_blobs)
   prog2: attempt to write with size > max_blob_size
+  prog2: attempt to write with size 0
+  
+  Testing for concurrent reads should be added
+  Testing for concurrent reads/writes/removes should be added
+
   
   
