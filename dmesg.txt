@@ -1,0 +1,60 @@
+Output from dmesg
+
+
+sstore: SStore Driver Initialized.
+sstore: SStore device opened
+sstore: first device open, init memory ...
+sstore: Write	index: 3	size : 25
+sstore: Finished copying from user space
+sstore: Write mutex
+sstore: User Data: 11111222223333344444data
+sstore: SStore device opened
+sstore: Write	index: 4	size : 25
+sstore: Finished copying from user space
+sstore: Write mutex
+sstore: User Data: 11111222223333344444data
+sstore: SStore device opened
+sstore: read	index: 3	size : 25
+sstore: mutex read
+sstore: User Data: 11111222223333344444data
+sstore: SStore device opened
+sstore: Remove blob
+sstore: Freeing blob memory
+sstore: SStore device opened
+sstore: read	index: 3	size : 25
+sstore: mutex read
+sstore: Invalid Index, sleeping ...
+sstore: SStore device opened
+sstore: Write	index: 3	size : 25
+sstore: Finished copying from user space
+sstore: Write mutex
+sstore: User Data: 11111222223333344444data
+sstore: SStore device opened
+sstore: Write	index: -1	size : 25
+sstore: Invalid "index" in the write request.
+sstore: User Data: 11111222223333344444data
+sstore: SStore device released
+sstore: SStore device released
+sstore: SStore device released
+sstore: SStore device released
+sstore: SStore device released
+sstore: SStore device opened
+sstore: Write	index: 10	size : 25
+sstore: Invalid "index" in the write request.
+sstore: SStore device released
+sstore: SStore device opened
+sstore: Write	index: 3	size : 0
+sstore: Finished copying from user space
+sstore: Write mutex
+sstore: User Data: <NULL>
+sstore: SStore device released
+sstore: SStore device opened
+sstore: Write	index: 3	size : 1000
+sstore: Invalid "size" in the write request.
+sstore: SStore device released
+sstore: SStore device released
+sstore: SStore device released
+sstore: no more opened sstores, clearing data ...
+sstore: clearing sstore statistics
+blk:/home/abdelhalim/modules/sstore# 
+

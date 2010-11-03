@@ -1,0 +1,53 @@
+running prog1
+------------
+
+blk:/home/abdelhalim/modules/sstore# insmod sstore.ko
+blk:/home/abdelhalim/modules/sstore# lsmod
+Module                  Size  Used by
+sstore                 11608  0 
+blk:/home/abdelhalim/modules/sstore# ./prog1
+write to sstore0 index:3 size:25 ..
+write to sstore0 index:4 size:25 ..
+read from sstore0 index:3 size:25 ..
+Data: 11111222223333344444data
+Delete blob... 
+delete from sstore0 index:3..
+read from sstore0 index:3 size:25 ..    /* blocked here waiting for data*/
+Data: 11111222223333344444data          /* wakeup by writer */
+
+
+- output from /proc
+------------------
+
+blk:/home/abdelhalim/modules/sstore# cat /proc/sstore/data 
+
+Device 0:
+blob 0 has no data
+
+blob 1 has no data
+
+blob 2 has no data
+
+blob 3 has no data
+
+blob 4 size 25 data:
+31 31 31 31 31 32 32 32 32 32 33 33 33 33 33 34 
+34 34 34 34 64 61 74 61 0 
+Device 1:no data device 1
+
+
+
+running prog2
+------------
+blk:/home/abdelhalim/modules/sstore# ./prog2
+write to sstore0 index:3 size:25 ..    /* wakeup sleepers */
+write to sstore0 index:-1 size:25 ..   /* index is not valid */
+write: Invalid argument
+write to sstore0 index:10 size:25 ..   /* index is > max_num_blobs */
+write: Invalid argument
+write to sstore0 index:3 size:0 ..     /* size 0 is ok */
+write to sstore0 index:3 size:1000 ..  /* size > max_blob_size */
+write: Invalid argument
+
+blk:/home/abdelhalim/modules/sstore# 
+
