@@ -267,6 +267,8 @@ sstore_cleanup(void)
 
 /*
  * Open sstore
+ * if this is the first time to open the device, allocate 
+ * the necessary memory for the sstore
  */
 int
 sstore_open(struct inode *inode, struct file *file)
@@ -292,8 +294,8 @@ sstore_open(struct inode *inode, struct file *file)
     /* Allocate memory for an array of pointers to the blobs */
     dev->data = kzalloc(max_num_blobs * sizeof(struct blob *), GFP_KERNEL);
     if (!dev->data) {
-	printk(KERN_DEBUG "sstore: Couldn't allocate memory for the sstore blobs\n");
-       return -ENOMEM;
+      printk(KERN_DEBUG "sstore: Couldn't allocate memory for the sstore blobs\n");
+      return -ENOMEM;
     }
     mutex_unlock(&dev->sstore_mutex);
   } 
@@ -334,6 +336,7 @@ sstore_release(struct inode *inode, struct file *file)
   printk(KERN_DEBUG "sstore: SStore device released\n"); 
 
   atomic_inc(&dev->refcount);
+  /* if there's is no more open devices, clear data */
   if(atomic_read(&dev->refcount) == 1) {
     printk(KERN_DEBUG "sstore: no more opened sstores, clearing data ...\n"); 
     clear_data(dev);
