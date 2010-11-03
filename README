@@ -2,7 +2,7 @@ Structured Store device driver (sstore)
 Abdelhalim Ragab (abdelhalim@r8t.org)
 Portland State Univeristy 
 Computer Science Department CS572
-November 2010
+Fall 2010
 
 
 Table of Contents
@@ -10,19 +10,105 @@ Table of Contents
 1. Introduction
 2. Design
 3. Building 
-4. Running
+4. Usage
 5. Testing
 
 ----------------------------------
 
 1. Introduction
+This kernel module implements structured stores to store arbitrary data inside 
+the kernel memory, accessible only by root.
+Other requirements are specied in the class wiki page:
+http://wiki.cs.pdx.edu/cs572/homework_1.html
+
+The module has been tested against 2.6.24 kernel, it may work with other newer
+versions but it has not been tested
 
 2. Design:
 
-- ioctl operation
+2.1 Module parameters
+  The module takes two parameters: "max_num_blobs", and "max_blob_size" to 
+  specify the maximum number of blobs, and the maximum blob size in the sstores
+  respectively.
+
+2.2 Minor devices
+  The driver creates two devices: /dev/sstore0 and /dev/sstore1, the number of
+  minor devices is controlled by a constant "NUM_MINOR_DEVICES" in the 
+  sstore.h file
+  
+2.3 Structured Storage Management
+  The structured storage is managed in array of pointers to blobs, the array
+  size is "max_num_blobs" and is allocated dynamically.
+  The blob storage is allocated the first time the device file is opened, 
+  and this was implemented using simple ref counts and atomic operations.
+  The blobs memory is zeroes out during allocation, using kzalloc and this 
+  was used as a check if the blob is valid or not.
+
+2.4 Read/Write operations
+  read() operation accepts a structure that specifies the blob index to be read
+  , the requested size, and a pointer to a user memory to copy the data to it.
+  If there was no data at the specified index, the read will block by calling
+  wait_event_interruptible() on a wait queue that is defined per device.
+  
+  write() operation accepts the same structure, but the blob pointer will point
+  to valid data. It also will call wake_up_interruptible() to wake any sleeping
+  reads.
+
+2.5 ioctl operations
+  SSTORE_IOCREMOVE ioctl command is supported to remove a blob at a given index
+  from the sstore.
+  The remove operation will fail if the supplied index points to non-existing
+  blob, or if the index is not within the bondaries of the blobs.
+
+2.6 proc file system
+  sstore creates two procfs entries: /proc/sstore/data and /proc/sstore/stats,
+  the first will show the memory contents of the sstores, while the second will
+  show some statistics about the sstore devices. Currently the drivers shows 
+  the number of read operations and write operations since the last time the 
+  statistics got cleared.
+  
+  /proc fs support was implemented using the old interface:
+    int (*get_info)(char *page, char **start, off_t offset, int count);
+  Two functions are defined to generate the contents of /proc/sstore/data 
+  and /proc/sstore/stats
+  The newer seq_file interface has been considered, but it didn't have any 
+  visible value over the old interface for this particular exercise.
+  
+  
+2.7 Clearing statistics (Optional)
+  The driver initializes a timer that expires every 'clear_time' and also 
+  creates a kthread that sleeps on a waiting_queue waiting queue. The timer 
+  handler wakes up the kthread and the thread clears the statistics and 
+  prints the kernel log message.
 
 3. Building:
 
-4. Running:
+  Make file is supplied. Typing make will build the device driver.
+  
+  # make
 
-5. Testing:
+4. Usage:
+  Loading the driver module:  
+  # insmod ./sstore.ko
+
+  root capabilities are required to use the sstore devices. The driver perform
+  this check in the driver open method, and fails otherwise to open.
+  
+  User land applications will call open(), read(), write, ioctl() as needed.
+
+
+5. Testing plan:
+  Two user programs has been created:
+  prog1: writes some blobs to the sstore at some indices
+  prog1: read them back
+  prog1: remove a blob from particular index
+  prog1: attempt to read the removed blob, will block
+  
+  prog2: write a blob to the same device/index as prog1
+  prog1: will wakeup and finish reading
+  
+  prog2: attempt to write to invalid index (<0)
+  prog2: attempt to write to invalid index (> max_num_blobs)
+  prog2: attempt to write with size > max_blob_size
+  
+  
