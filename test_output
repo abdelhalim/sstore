@@ -16,8 +16,8 @@ read from sstore0 index:3 size:25 ..    /* blocked here waiting for data*/
 Data: 11111222223333344444data          /* wakeup by writer */
 
 
-- output from /proc
-------------------
+- output from /proc/sstore/data
+------------------------------
 
 blk:/home/abdelhalim/modules/sstore# cat /proc/sstore/data 
 
@@ -36,12 +36,6 @@ blob 4 size 25 data:
 Device 1:no data device 1
 
 
-abdelhalim@blk:~/modules/sstore$ cat /proc/sstore/stats 
-Device 0: reads: 2	writes: 4
-Device 1: reads: 0	writes: 0
-abdelhalim@blk:~/modules/sstore$ 
-
-
 
 
 running prog2
@@ -57,4 +51,13 @@ write to sstore0 index:3 size:1000 ..  /* size > max_blob_size */
 write: Invalid argument
 
 blk:/home/abdelhalim/modules/sstore# 
+
+- output from /proc/sstore/stats
+------------------------------
+
+abdelhalim@blk:~/modules/sstore$ cat /proc/sstore/stats 
+Device 0: reads: 2	writes: 4
+Device 1: reads: 0	writes: 0
+abdelhalim@blk:~/modules/sstore$ 
+
 
