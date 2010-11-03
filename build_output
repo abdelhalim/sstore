@@ -1,0 +1,24 @@
+Build output:
+
+
+Driver:
+--------
+
+abdelhalim@blk:~/modules/sstore$ make
+make -C /lib/modules/2.6.24-rgb/build M=/home/abdelhalim/modules/sstore modules
+make[1]: Entering directory `/home/abdelhalim/kernel/linux-2.6.24'
+  Building modules, stage 2.
+  MODPOST 1 modules
+make[1]: Leaving directory `/home/abdelhalim/kernel/linux-2.6.24'
+abdelhalim@blk:~/modules/sstore$ 
+
+
+Tests:
+------
+
+abdelhalim@blk:~/modules/sstore$ make test
+gcc -o prog1 test_common.c test1_sstore.c
+gcc -o prog2 test_common.c test2_sstore.c
+abdelhalim@blk:~/modules/sstore$ 
+
+
