@@ -21,6 +21,12 @@
 /* Remove blob from the sstore */
 #define SSTORE_IOCREMOVE _IOW(SSTORE_IOC_MAGIC, 1, int)
 
+
+/* End IOCTL operations */
+
+#define NUM_MINOR_DEVICES          2
+
+
 /* data structure used for read/write operations */
 struct data_buffer {
     int index;      /* index into the blob list */
