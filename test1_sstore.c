@@ -22,26 +22,26 @@ int main() {
   void* data;
   
 
- test_write(3, 25, "11111222223333344444data\0");
+ test_write(3, 25, "11111222223333344444data\0", 0);
 
  /* write same data to different index */
- test_write(4, 25, "11111222223333344444data\0");
+ test_write(4, 25, "11111222223333344444data\0", 0);
 
 
   /* Now testing the read */
   
-  printf("Reading Data... \n");
   data = (char *) malloc(25 * sizeof (char));
 
-  test_read(3, 25, data);
+  test_read(3, 25, data, 0);
   printf("Data: %s\n", data);
 
   printf("Delete blob... \n");
-  test_del(3);
+  test_del(3, 0);
 
-  printf("Reading Data... \n");
-  test_read(3, 25, data);
+  test_read(3, 25, data, 0);
   printf("Data: %s\n", data);
+  
+  free(data);
   
 
 }

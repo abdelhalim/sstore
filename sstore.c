@@ -478,7 +478,7 @@ sstore_write(struct file *file, const char __user *u_buf,
   /* check if index value is valid */
   if (k_buf->index < 0 
       || k_buf->index > max_num_blobs) {
-    printk(KERN_INFO "sstore: Invalid \"index\" in the write request"); 
+    printk(KERN_INFO "sstore: Invalid \"index\" in the write request.\n"); 
     kfree(k_buf);
     return -EINVAL;
   }

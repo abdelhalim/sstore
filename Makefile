@@ -11,8 +11,8 @@ default:
 	$(MAKE) -C $(KERNELDIR) M=$(PWD) modules
 endif
 
-prog1: test_common.c test_sstore.c 
-	gcc -o prog1 test_common.c test_sstore.c
+prog1: test_common.c test1_sstore.c 
+	gcc -o prog1 test_common.c test1_sstore.c
 
 prog2: test_common.c test2_sstore.c 
 	gcc -o prog2 test_common.c test2_sstore.c
