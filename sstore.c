@@ -402,15 +402,18 @@ sstore_read(struct file *file, char __user *u_buf,
     /* sleep & wait for data */
     mutex_unlock(&dev->sstore_mutex);
     wait_event_interruptible(dev->wq, dev->data[k_buf->index]);
-    mutex_lock(&dev->sstore_mutex);
+    
+	/* check if the reader woke up by signal, then free the buffer and die */
+	if (signal_pending(current)) {
+		printk(KERN_ALERT "sstore: pid %u got signal.\n", (unsigned) current->pid);
+		kfree(k_buf);
+		return -EINTR;
+	}
+	  
+	mutex_lock(&dev->sstore_mutex);
     blob = dev->data[k_buf->index];
   } 
-  if (signal_pending(current)) {
-    printk(KERN_ALERT "sstore: pid %u got signal.\n", (unsigned) current->pid);
-    mutex_unlock(&dev->sstore_mutex);
-    kfree(k_buf);
-    return -EINTR;
-  }
+  
 
 #ifdef DEBUG
   printk("sstore: User Data: %s\n", blob->data);
@@ -426,8 +429,9 @@ sstore_read(struct file *file, char __user *u_buf,
     bytes_read = blob->size;
   } 
 
+  /* copy the data to user space */
   if(copy_to_user(k_buf->data, blob->data, k_buf->size)) {
-    printk("sstore: Copy from user\n");
+    printk("sstore: Copy to user\n");
     mutex_unlock(&dev->sstore_mutex);
     kfree(k_buf);
     return -EFAULT;
@@ -464,6 +468,11 @@ sstore_write(struct file *file, const char __user *u_buf,
     return -ENOMEM;
   }
   
+  /* copy the request from user space, this is not the actual data
+   * to be written but just the index, size, and a pointer to the 
+   * data, data copying will occur later after checking the index
+   * and size 
+   */
   if(copy_from_user(k_buf, u_buf, sizeof (struct data_buffer))) {
     printk(KERN_DEBUG "sstore: Problem copying from user space\n");
     kfree(k_buf);
@@ -490,8 +499,10 @@ sstore_write(struct file *file, const char __user *u_buf,
     return -EINVAL;
   } 
 
+  /* allocate memory for the blob */	
   blob = kmalloc(sizeof (struct blob), GFP_KERNEL);
   if (blob) {
+	/* allocate memory for the blob data itself */
     blob->data = kmalloc(k_buf->size, GFP_KERNEL);
     if (!blob->data) {
       printk("sstore: Bad kmalloc\n");
@@ -499,6 +510,7 @@ sstore_write(struct file *file, const char __user *u_buf,
       return -ENOMEM;
     }
 
+	/* copy the actual data to be written from user space */
     if(copy_from_user(blob->data, k_buf->data, k_buf->size)) {
       printk(KERN_DEBUG "sstore: Problem copying from user space\n");
       kfree(k_buf);
@@ -507,11 +519,13 @@ sstore_write(struct file *file, const char __user *u_buf,
     }
     printk(KERN_DEBUG "sstore: Finished copying from user space\n");
 
-    blob->size = k_buf->size;
+    /* set the blob size to the size in the write request */
+	blob->size = k_buf->size;
 
 #ifdef DEBUG
   printk(KERN_DEBUG "sstore: Write mutex\n");
 #endif
+	/* acquire the mutex, set the blob pointer in the dev structure */
     mutex_lock(&dev->sstore_mutex);
     dev->data[k_buf->index] = blob;
     bytes_written = k_buf->size;
@@ -519,10 +533,12 @@ sstore_write(struct file *file, const char __user *u_buf,
 #ifdef DEBUG
   printk("sstore: User Data: %s\n", blob->data);
 #endif
-    /* Increment number of write operations */
+    /* Increment number of write operations for statistics */
     dev->nwrites++;
 
     mutex_unlock(&dev->sstore_mutex);
+	  
+	/* wake all sleeping readers on this device */
     wake_up_interruptible(&dev->wq);
 
   }
@@ -535,6 +551,8 @@ sstore_write(struct file *file, const char __user *u_buf,
 
 /*
  * Ioctls 
+ * The only supported operation is SSTORE_IOCREMOVE to remove
+ * a blob from a given index
  */
 static int
 sstore_ioctl(struct inode *inode, struct file *file,
@@ -580,6 +598,12 @@ sstore_ioctl(struct inode *inode, struct file *file,
   return retval;
 }
 
+/* print the contents of the sstore when reading /proc/sstore/data
+ * if the sstore blob is empty, it will print that it has no data
+ * variable line_width controls how many columns will appear in the 
+ * output
+ */
+
 int sstore_read_procmem(char *buf, char **start, off_t offset,
                        int count, int *eof, void *data)
 {
@@ -592,11 +616,15 @@ int sstore_read_procmem(char *buf, char **start, off_t offset,
   for (i = 0; i < NUM_MINOR_DEVICES ; i++) {
     len += sprintf(buf+len, "\nDevice %i:", i);
 
-    mutex_lock(&sstore_devp[i]->sstore_mutex);
+    /* acquire the mutext before doing anything */
+	mutex_lock(&sstore_devp[i]->sstore_mutex);
+	  
+	/* if the store has data */
     if (sstore_devp[i]->data) {
       for (j = 0; j < max_num_blobs; j++) {
         blobp = sstore_devp[i]->data[j]; 
-        if (blobp) {
+        /* if the blob is valid */
+	    if (blobp) {
           len += sprintf(buf+len, "\nblob %i size %i data:", j, blobp->size);
 	  for (k = 0; k < blobp->size; k++) {
             if (k%line_width == 0) {
@@ -619,6 +647,11 @@ int sstore_read_procmem(char *buf, char **start, off_t offset,
   return len;
 }
 
+/* print statistics when reading /proc/sstore/stats
+ * Currently this method prints the total number of read
+ * operations and write operation since last time the
+ * statistcs has been cleared.
+ */
 int sstore_read_procstats(char *buf, char **start, off_t offset,
                        int count, int *eof, void *data)
 {
@@ -628,6 +661,8 @@ int sstore_read_procstats(char *buf, char **start, off_t offset,
   for (i = 0; i < NUM_MINOR_DEVICES ; i++) {
     len += sprintf(buf+len, "Device %i: ", i);
 
+	/* acquire the mutex and print the statistics, number of read operations
+	 and write operations */
     mutex_lock(&sstore_devp[i]->sstore_mutex);
     len += sprintf(buf+len, "reads: %i\t", sstore_devp[i]->nreads);
     len += sprintf(buf+len, "writes: %i\n", sstore_devp[i]->nwrites);
