@@ -208,20 +208,11 @@ static void sstore_clear_statistics(unsigned long params)
 
 /* clear sstore statistics */
 
-void clear_statistics() {
-  int i;
-  for (i=0; i<NUM_MINOR_DEVICES; i++) {
-    mutex_lock(&sstore_devp[i]->sstore_mutex);
-    sstore_devp[i]->nreads  = 0;
-    sstore_devp[i]->nwrites = 0;
-    mutex_unlock(&sstore_devp[i]->sstore_mutex);
-  }
-}
-
 static int
 clear_thread(void *dummy) 
 {
   int rc;
+  int i;
 
   while (1) {
     rc = wait_event_interruptible(clear_thread_wait,
@@ -231,7 +222,12 @@ clear_thread(void *dummy)
       break;
     }
     
-    clear_statistics();
+    for (i=0; i<NUM_MINOR_DEVICES; i++) {
+      mutex_lock(&sstore_devp[i]->sstore_mutex);
+      sstore_devp[i]->nreads  = 0;
+      sstore_devp[i]->nwrites = 0;
+      mutex_unlock(&sstore_devp[i]->sstore_mutex);
+    }
     timer_off = 0;
   }
   return 0;
@@ -307,6 +303,26 @@ sstore_open(struct inode *inode, struct file *file)
   return 0;
 }
 
+/* clear all data */
+
+void clear_data(struct sstore_dev *dev) {
+  int i;
+  struct blob *blobp;
+  
+  mutex_lock(&dev->sstore_mutex);
+  for(i = 0; i < max_num_blobs; i++) {
+    blobp = dev->data[i];
+    if (blobp) {
+      kfree(blobp->data);
+      kfree(blobp);
+      dev->data[i] = NULL;
+    }    
+
+  }
+  mutex_unlock(&dev->sstore_mutex);
+
+}
+
 /*
  * Release sstore
  */
@@ -317,8 +333,11 @@ sstore_release(struct inode *inode, struct file *file)
 
   printk(KERN_DEBUG "sstore: SStore device released\n"); 
 
-  /* TODO do we need to check for open count? */
-  atomic_inc(&dev->refcount); /* release the device */
+  atomic_inc(&dev->refcount);
+  if(atomic_read(&dev->refcount) == 1) {
+    printk(KERN_DEBUG "sstore: no more opened sstores, clearing data ...\n"); 
+    clear_data(dev);
+  }
   return 0;
 }
 
