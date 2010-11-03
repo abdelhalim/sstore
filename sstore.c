@@ -335,7 +335,7 @@ sstore_read(struct file *file, char __user *u_buf,
   if(copy_from_user(k_buf, u_buf, sizeof (struct data_buffer))) {
     printk("sstore: Copy from user\n");
     kfree(k_buf);
-    return -ENOTTY;
+    return -EFAULT;
   }
 
 #ifdef DEBUG
@@ -434,7 +434,7 @@ sstore_write(struct file *file, const char __user *u_buf,
   if(copy_from_user(k_buf, u_buf, sizeof (struct data_buffer))) {
     printk(KERN_DEBUG "sstore: Problem copying from user space\n");
     kfree(k_buf);
-    return -ENOTTY;
+    return -EFAULT;
   }
 
 #ifdef DEBUG
@@ -470,7 +470,7 @@ sstore_write(struct file *file, const char __user *u_buf,
       printk(KERN_DEBUG "sstore: Problem copying from user space\n");
       kfree(k_buf);
       kfree(blob);
-      return -ENOTTY;
+      return -EFAULT;
     }
     printk(KERN_DEBUG "sstore: Finished copying from user space\n");
 
